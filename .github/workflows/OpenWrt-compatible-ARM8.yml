@@ -1,67 +1,31 @@
-name: Build aria2 ARM64 (OpenWrt-compatible)
+name: Build aria2 ARM64 OpenWrt
 
 on:
   push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Build aria2 (ARM64, musl, minimal deps)
+      - name: Build aria2
         run: |
-          docker run --rm \
-            -v $PWD:/src \
-            -w /src \
-            --platform linux/arm64 \
-            alpine:latest \
-            sh -c '
-              apk add --no-cache \
-                build-base \
-                autoconf \
-                automake \
-                libtool \
-                pkgconf \
-                gettext-dev \
-                openssl-dev \
-                zlib-dev \
-                ca-certificates
+          docker run --rm -v $PWD:/src -w /src --platform linux/arm64 alpine:latest sh -c '
+            apk add --no-cache build-base autoconf automake libtool pkgconf gettext-dev openssl-dev zlib-dev ca-certificates
+            autoreconf -i
+            ./configure --host=aarch64-linux-musl --disable-static --enable-shared --with-openssl
+            make -j$(nproc)
+            strip src/aria2c
+          '
 
-              autoreconf -i
-
-              ./configure \
-                --host=aarch64-linux-musl \
-                --disable-static \
-                --enable-shared \
-                --with-openssl \
-                --without-libssh2 \
-                --without-libcares \
-                --without-expat \
-                --without-sqlite3 \
-                --disable-metalink \
-                --disable-xml-rpc \
-                --disable-nls
-
-              make -j$(nproc)
-
-              strip src/aria2c
-            '
-
-      - name: Verify binary
-        run: |
-          ls -lh src/aria2c
-          file src/aria2c
-          ldd src/aria2c || true
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
+      - name: Upload release binary
+        uses: softprops/action-gh-release@v2
         with:
-          name: aria2-arm64-openwrt
-          path: src/aria2c
+          files: src/aria2c
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
